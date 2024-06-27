@@ -1,0 +1,129 @@
+Sub FetchAndInsertImages()
+    Dim ws As Worksheet
+    Dim i As Integer
+    Dim ASIN As String
+    Dim imageURL As String
+    Dim savePath As String
+    
+    ' Set the worksheet where ASIN codes are listed
+    Set ws = ThisWorkbook.Sheets("Sheet1")  ' Replace "Sheet1" with your sheet name
+    
+    ' Loop through each ASIN in column A starting from row 2 (assuming row 1 is header)
+    For i = 2 To ws.Cells(ws.Rows.Count, "A").End(xlUp).row
+        ASIN = ws.Cells(i, "A").Value
+        
+        ' Construct the URL to fetch image from Amazon
+        Dim url As String
+        url = "https://www.amazon.in/dp/" & ASIN
+        
+        ' Navigate to the Amazon product page
+        Dim objIE As Object
+        Set objIE = CreateObject("InternetExplorer.Application")
+        With objIE
+            .Visible = False ' Set to True for debugging
+            .navigate url
+            
+            ' Wait for the webpage to load
+            Do While .Busy Or .readyState <> 4
+                DoEvents
+            Loop
+            
+            ' Get the image URL from the img element
+            Dim doc As Object
+            Set doc = .document
+            imageURL = doc.getElementById("landingImage").src
+            
+            ' Close Internet Explorer
+            .Quit
+        End With
+        
+        ' Download the image
+        If imageURL <> "" Then
+            ' Download image to a temporary folder
+            savePath = Environ("TEMP") & "\" & ASIN & ".jpg"  ' Temporary folder path
+            DownloadFile imageURL, savePath
+            
+            ' Insert the image into Excel cell and adjust cell size
+            If Len(Dir(savePath)) > 0 Then
+                InsertImageInCellAndResize ws, savePath, i
+                
+                ' Delete the temporary image file
+                Kill savePath
+            End If
+        End If
+    Next i
+End Sub
+
+Sub InsertImageInCellAndResize(ws As Worksheet, imagePath As String, rowNum As Integer)
+    Dim img As Object
+    Dim cellLeft As Double
+    Dim cellTop As Double
+    Dim cellWidth As Double
+    Dim cellHeight As Double
+    Dim imgWidth As Double
+    Dim imgHeight As Double
+    Dim aspectRatio As Double
+    Dim newWidth As Double
+    Dim newHeight As Double
+    
+    ' Load the image
+    Set img = LoadPicture(imagePath)
+    imgWidth = img.Width
+    imgHeight = img.Height
+    
+    ' Get the cell dimensions
+    cellLeft = ws.Cells(rowNum, "B").Left
+    cellTop = ws.Cells(rowNum, "B").Top
+    cellWidth = ws.Cells(rowNum, "B").Width
+    cellHeight = ws.Cells(rowNum, "B").Height
+    
+    ' Calculate aspect ratio of the image
+    aspectRatio = imgWidth / imgHeight
+    
+    ' Calculate new dimensions to fit within the cell width and height
+    If aspectRatio > 1 Then
+        ' Landscape orientation
+        newWidth = cellWidth
+        newHeight = newWidth / aspectRatio
+    Else
+        ' Portrait orientation
+        newHeight = cellHeight
+        newWidth = newHeight * aspectRatio
+    End If
+    
+    ' Insert image in cell and adjust cell size
+    With ws.Shapes.AddPicture(imagePath, msoFalse, msoCTrue, cellLeft, cellTop, newWidth, newHeight)
+        .LockAspectRatio = msoTrue
+        .Placement = 1 ' Move and size with cells
+    End With
+    
+    ' Resize the cell to fit the image
+    ws.Cells(rowNum, "B").RowHeight = newHeight + 5 ' Add some padding (adjust as needed)
+End Sub
+
+Sub DownloadFile(url As String, savePath As String)
+    Dim objXML As Object
+    
+    ' Create XMLHTTP object
+    Set objXML = CreateObject("MSXML2.XMLHTTP")
+    
+    ' Open the URL and send the request
+    objXML.Open "GET", url, False
+    objXML.Send
+    
+    ' Save the response to a file
+    If objXML.Status = 200 Then
+        Dim objStream As Object
+        Set objStream = CreateObject("ADODB.Stream")
+        objStream.Open
+        objStream.Type = 1 ' Binary
+        objStream.Write objXML.responseBody
+        objStream.SaveToFile savePath, 2 ' Overwrite
+        objStream.Close
+    Else
+        MsgBox "Failed to download: " & url
+    End If
+    
+    Set objXML = Nothing
+End Sub
+
